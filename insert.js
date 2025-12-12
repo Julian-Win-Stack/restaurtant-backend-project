@@ -21,4 +21,4 @@ async function insertInventory() {
     console.log("Pushed new inventory")
     console.log(newInventory)
 }
-insertInventory()
+
