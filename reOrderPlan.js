@@ -1,7 +1,7 @@
 import getOrders from "./getOrders.js";
 import getInventory from "./getInventory.js"
 import getRecipes from "./getRecipes.js";
-import inventoryPolicy from "./inventoryPolicy.js";
+import getPolicy from "./getPolicy.js";
 
 // Convert recipe rows into a lookup map:
 // { "Chicken Sandwich": { buns: 1, chicken: 1, lettuce: 1 }, ... }
@@ -65,7 +65,7 @@ async function calculateNeededInventory() {
 async function reOrderPlan() {
     const neededInventory = await calculateNeededInventory()
     const inventories = await getInventory()
-
+    const policyMap = await getPolicy()
 
     // Convert inventory records array into a lookup map for fast access:
     // storage["buns"] -> available amount
@@ -83,26 +83,25 @@ async function reOrderPlan() {
     const allIngredients = new Set([
         ...Object.keys(storage),
         ...Object.keys(neededInventory),
-        ...Object.keys(inventoryPolicy)
+        ...Object.keys(policyMap)
     ])
 
     for (const ingredient of allIngredients){
         const needed = neededInventory[ingredient] ?? 0
         const available = storage[ingredient] ?? 0
-  
-
-        const hasPolicy = inventoryPolicy[ingredient] !== undefined && inventoryPolicy[ingredient] !== null
-
-        const policy = inventoryPolicy[ingredient] ?? {reorderPoint: 0, targetLevel: 0}
+        const leftInventory = available - needed
+        const policy = policyMap[ingredient] ?? {reorderPoint: 0, targetLevel: 0}
         const reorderPoint = policy.reorderPoint ?? 0
         const targetLevel = policy.targetLevel ?? 0
 
         let policyError = null
         let policyWarning = null
-
+        const hasPolicy = policyMap[ingredient] !== undefined && policyMap[ingredient] !== null
         if(!hasPolicy){
             policyWarning = "missing policy!"
         }
+
+       
 
         // Policy sanity check: after reordering, targetLevel should be >= reorderPoint.
         // If not, config is inconsistent and could lead to negative recommended orders.
@@ -113,12 +112,12 @@ async function reOrderPlan() {
         // shortageAmount: immediate inability to fulfill demand (needed - available)
         // recommendedOrderAmount: purchasing decision when stock is low (refill to targetLevel)
         const shortageAmount = Math.max(0, needed - available)
-        const shouldReorder = available <= reorderPoint
+        const shouldReorder = leftInventory <= reorderPoint
 
         // If policy is misconfigured, targetLevel - available can go negative.
         // We still clamp to 0 to avoid impossible order quantities.
         const recommendedOrderAmount = shouldReorder
-        ? Math.max(0, targetLevel - available)
+        ? Math.max(0, targetLevel - leftInventory)
         : 0
 
         // Output if anything is actionable OR misconfigured
